@@ -1,9 +1,4 @@
----
-title: '5.15'
-author: "Kelly Broen"
-date: "5/15/2020"
-output: html_document
----
+
 
 ```{r setup, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
 ##Set seed for consistency
