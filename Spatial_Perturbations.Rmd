@@ -1,0 +1,568 @@
+---
+title: '5.15'
+author: "Kelly Broen"
+date: "5/15/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+##Set seed for consistency
+set.seed(403489)
+
+##Load the packages you need 
+require(readr)
+require(spatstat)
+require(maptools)
+require(spdep)
+require(kableExtra)
+require(raster)
+require(ggplot2)
+require(rdist)
+require(ggpubr)
+require(sf)
+require(GISTools)
+require(dplyr)
+###Step 1: Perturb the data using various methods of geomasking
+
+##Import the data 
+data<- read.csv("Lawrence.csv")
+
+#Subset to data with geocdoded locations
+data<- data %>% subset(lat>0 & long>0)
+
+#restrict data to useful variables
+data<- data[c("lat","long")]
+
+
+##New data frame to fill with perturbed data
+p.data<- data.frame("Orig.Long"= data$long,"Orig.Lat"=data$lat)
+
+##Method 1: Random Perturbation
+
+##Perturbation 1: Random Jitter within 50 Meters
+#Random Jitter function
+"jitter" <-
+  function(coords, max, min){
+    n <- nrow(coords)
+    angle <- runif(n, min=0, max=2*pi)
+    d <- sqrt(runif(n, min = min^2, max = max^2))
+    coords <- coords + cbind(d * cos(angle), d * sin(angle))
+    return(coords)
+  }
+
+#Put latitude and longtitude into matrix form
+m<- cbind(data$long, data$lat)
+
+##Perturb the points to somewhere within a 50 meter radius (0 minimum)
+P1<-jitter(m, 50, 0)
+
+
+##Save points to dataframe
+p.data<- p.data %>%
+  mutate(P1long =P1[,1],
+  P1lat =P1[,2])
+P1<- data.frame("long"= P1[,1], "lat"=P1[,2])
+
+##Perturbation 2: Random Jitter within 250 Meters
+P2<- jitter(m, 250, 0)
+
+##Save points to dataframe
+p.data<- p.data %>%
+  mutate(P2long =P2[,1],
+  P2lat =P2[,2])
+P2<- data.frame("long"= P2[,1], "lat"=P2[,2])
+
+##Method 2: Weighted Random Perturbation
+  ##Instead of choosing the distance to move the points, it is decided by distance to a kth nearest neighbor
+
+##Perturbation 3: weighted Random Jitter within K=5
+
+#Put the data into ppp form, using the package spatstat
+p<- ppp(data$long, data$lat, c(min(data$long), max(data$long)), c(min(data$lat), max(data$lat)))
+  #Ignore warning that there are duplicate points. Some deaths occurred at the same place. 
+
+#get the distance to the 5th nearest neighbor for each point
+d5<-(nndist(p, k=5))
+
+P3<- data.frame("long"=as.numeric(),"lat"=as.numeric())
+
+for(i in 1:length(data$long)){
+ P3[i,]<-jitter(data[i,], d5[i], 0)
+}
+
+p.data<- p.data %>%
+  mutate(P3long =P3[,1],
+  P3lat =P3[,2])
+P3<- data.frame("long"= P3[,2], "lat"=P3[,1])
+
+##Perturbation 4: weighted Random Jitter within K=50
+
+#get the distance to the 5th nearest neighbor for each point
+d50<-(nndist(p, k=50))
+
+P4<- data.frame("long"=as.numeric(),"lat"=as.numeric())
+
+for(i in 1:length(data$long)){
+  P4[i,]<-jitter(data[i,], d50[i], 0)
+}
+
+p.data<- p.data %>%
+  mutate(P4long =P4[,1],
+  P4lat =P4[,2])
+P4<- data.frame("long"= P4[,2], "lat"=P4[,1])
+
+
+##Method 3: Donut Masking
+  ##Randomly jitter the point between a minimum and maximum distance
+
+#Perturbation 5: Donut between 5-50 Meters
+P5<- jitter(m, 50, 5)
+
+##Save points to dataframe
+p.data<- p.data %>%
+  mutate(P5long =P5[,1],
+  P5lat =P5[,2])
+P5<- data.frame("long"= P5[,1], "lat"=P5[,2])
+
+#Perturbation 6: Donut between 50-250 Meters
+P6<- jitter(m, 250, 50)
+
+##Save points to dataframe
+p.data<- p.data %>%
+  mutate(P6long =P6[,1],
+  P6lat =P6[,2])
+P6<- data.frame("long"= P6[,1], "lat"=P6[,2])
+
+
+##Perturbation 7: Shear the data 
+P7<-affine(p, matrix(c(1,0,1,1),ncol=2))
+
+#offset by the mean
+P7$x<-P7$x-4730704
+
+p.data<- p.data %>%
+  mutate(P7long =P7$x,
+  P7lat =P7$y)
+P7<- data.frame("long"= P7$x, "lat"=P7$y)
+
+
+##Method 5: Voronoi Masking
+##Move each point to the midpoint between it and its nearest neighbor
+
+#Perturbation 8
+##Voronoi Mask function
+vmask<- function(z){
+  dist<-nnwhich(z$x,z$y, method="C")
+  vmx<-c()
+  vmy<-c()
+  
+  for (i in 1:length(z$y)){
+    vmx[i]=(z$x[dist[i]]+z$x[i])/2
+    vmy[i]=(z$y[dist[i]]+z$y[i])/2
+  }
+  output<-data.frame(vmx,vmy)
+}
+
+##Use the vmask function
+P8<- vmask(data.frame("x"= data$long,"y"=data$lat))
+p.data<- p.data %>%
+  mutate(P8long =P8[,1],
+  P8lat =P8[,2])
+P8<- data.frame("long"= P8[,1], "lat"=P8[,2])
+
+
+##Method 6: Grid Center Masking
+
+##Create a grid over the data and mvoe each point to the middle of the cell it is in
+#Perturbation 9: Grid Center Masking with 100x100 Meter Cells
+##Load shapefile of Lawrence, MA
+##Create a grid over the data and move each point to the middle of the cell it is in
+
+law<- st_read("tl_2017_25_cousub.shp")
+law<- law[law$NAME=="Lawrence",]
+law<- st_transform(structure(law, proj4string = "+proj=utm +zone=19 ellps=WGS84"), "+proj=utm +zone=19 ellps=WGS84")
+
+#Put points into sf form
+sf<- st_as_sf(data, coords= c("long","lat"))
+st_crs(sf)<- "+proj=utm +zone=19 ellps=WGS84"
+
+#Make a grid with cells 100x100 meters
+R100 <- st_as_sf(rasterToPolygons(raster(xmn=min(data$long), ymn=min(data$lat), xmx=max(data$long), ymx=max(data$lat), res=100)))
+grid100<- (st_make_grid(R100, cellsize = 100, what = "polygons"))
+st_crs(grid100)<- "+proj=utm +zone=19 ellps=WGS84"
+
+l<- st_intersects(sf, grid100)
+for(i in 1:4050){
+t<- l[[i]]
+p.data$P9long[i]<-st_coordinates(st_centroid(grid100[t]))[1]
+p.data$P9lat[i]<- st_coordinates(st_centroid(grid100[t]))[2]
+}
+P9<- data.frame("long"= p.data$P9long, "lat"=p.data$P9lat)
+
+#Perturbation 10: Grid Center Masking with 250x250 Meter Cells
+
+#Make a grid with cells 250x250 meters
+R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(data$long), ymn=min(data$lat), xmx=max(data$long), ymx=max(data$lat), res=250)))
+grid250<- (st_make_grid(R100, cellsize = 250, what = "polygons"))
+st_crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
+
+l<- st_intersects(sf, grid250)
+for(i in 1:4050){
+t<- l[[i]]
+p.data$P10long[i]<-st_coordinates(st_centroid(grid250[t]))[1]
+p.data$P10lat[i]<- st_coordinates(st_centroid(grid250[t]))[2]
+}
+
+P10<- data.frame("long"= p.data$P10long, "lat"=p.data$P10lat)
+
+#Perturbation 11: Grid Line Masking with 100x100 Meter Cells
+grd100<- as(st_cast(grid100, "MULTILINESTRING"), "Spatial")
+P11<-snapPointsToLines(SpatialPoints(cbind(data$long,data$lat), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84")), grd100,maxDist =100)
+
+
+p.data<- p.data %>%
+  mutate(P11long =P11@coords[,1],
+  P11lat =P11@coords[,2])
+P11<- data.frame("long"= p.data$P11long, "lat"=p.data$P11lat)
+
+#Perturbation 11: Grid Line Masking with 100x100 Meter Cells
+grd250<- as(st_cast(grid250, "MULTILINESTRING"), "Spatial")
+P12<-snapPointsToLines(SpatialPoints(cbind(data$long,data$lat), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84")), grd250,maxDist =300)
+
+p.data<- p.data %>%
+  mutate(P12long =P12@coords[,1],
+  P12lat =P12@coords[,2])
+P12<- data.frame("long"= p.data$P12long, "lat"=p.data$P12lat)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Plot each perturbation to see the differences 
+P0<- data.frame("long"= data[,2], "lat"=data[,1]) 
+P<- list(P0,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12)
+
+river<- st_read("HYDRO100K_ARC.shp")
+river<- river %>% subset(NAME=="Merrimack River")
+river<- st_transform(structure(river, proj4string = "+proj=utm +zone=19 ellps=WGS84"),"+proj=utm +zone=19 ellps=WGS84")
+river<- st_intersection(law,river)
+
+method<- c("Original Data", "Random Perturbation 50m","Random Perturbation 250m","Random Weighted Perturbation 5NN","Random Weighted Perturbation 50NN", "Donut between 5-50 Meters","Donut between 50-250 Meters","Affine Shear", "Voronoi Masked","Grid Center w/100M cells","Grid Center w/250M cells","Grid Line w/100M cells","Grid Line w/250M cells")
+
+
+cplot<- function(x){
+  ggplot() +
+  geom_sf(data=law, fill=NA)+
+  geom_sf(data=river, color= "blue")+
+  geom_point(data=x, aes(x=long, y=lat), color= "red", size=.1)+
+  theme_void()+
+  ggtitle(method[i])
+}
+
+plots<- list()
+for(i in 1:13){
+  plots[[i]]<- cplot(P[[i]])
+}
+  
+```
+
+```{r, message=FALSE,echo= FALSE,warning=FALSE,error=FALSE}
+##Analysis 1: Global Moran's I
+#aggregate data
+mI<- c()
+mvar<- c()
+mprop<- c()
+
+#aggregate data
+agg.P<- list()
+for (i in 1:length(P)){
+ agg.P[[i]]<- aggregate(P[[i]][1], by=list(P[[i]][,1], P[[i]][,2]), FUN=length) 
+ colnames(agg.P[[i]])<- c("long", "lat", "deaths")
+}
+
+R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1]), ymn=min(P[[1]][2]), xmx=max(P[[1]][1]), ymx=max(P[[1]][2]), res=250)))
+grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
+grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
+crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
+
+
+for(i in 1:length(P)){
+  
+  p<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
+  grid250$counts<- poly.counts(p, grid250)
+
+  lw<- nb2listw(poly2nb(grid250), zero.policy = TRUE)
+  m<-moran.test(grid250$counts, lw, zero.policy = TRUE)
+  mI[i]<- round(m$estimate[1],2)
+  mvar[i]<- round(m$estimate[3],5)
+  mprop[i]<- round(mI[i]/mI[1],2)
+}
+gMoran<- data.frame(method, mI, mprop, mvar)
+
+##Make a table of results
+gm<- kable(gMoran, col.names=c("Perturbation Method", "Global Moran's I","Proportion of Unperturbed I", "Variance in I"), caption= "Global Moran's I") %>% 
+kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Get the spatial center of each perturbation
+
+meanlong<- c()
+meanlat<- c()
+medlong<- c()
+medlat<- c()
+meansh<- c()
+medsh<- c()
+
+
+for (i in 1:length(P)){
+  meanlong[i]<- mean(P[[i]][,1], na.rm=TRUE)
+  meanlat[i]<- mean(P[[i]][,2],na.rm=TRUE)
+  medlong[i]<- median(P[[i]][,1],na.rm=TRUE)
+  medlat[i]<- median(P[[i]][,2],na.rm=TRUE)
+  meansh[i]<- sqrt(((meanlong[1]-meanlong[i])^2)+((meanlat[1]-meanlat[1])^2))
+  medsh[i]<- sqrt(((medlong[1]-medlong[i])^2)+((medlat[1]-medlat[1])^2))
+}
+
+center<- data.frame(method, round(medsh,2), round(meansh,2))
+
+spcenter<-kable(center, col.names=c("Perturbation Method", "Change in Median","Change in Mean"), caption = "Changes in Spatial Center") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Local Moran's
+lmdf<-list()
+R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1])-500, ymn=min(P[[1]][2])-500, xmx=max(P[[1]][1])+500, ymx=max(P[[1]][2])+500, res=250)))
+grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
+grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
+crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
+
+
+for (i in 1:13){
+R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[i]][1]), ymn=min(P[[i]][2]), xmx=max(P[[i]][1]), ymx=max(P[[i]][2]), res=250)))
+grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
+grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
+crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
+  
+
+  p<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
+  grid250$counts<- poly.counts(p, grid250)
+  nb<- poly2nb(grid250)
+  lw<- nb2listw(nb)
+  li<-(localmoran(grid250$counts, lw))
+
+  grid250@data$id <- rownames(grid250@data)
+  grid250@data$mi <- li[,1]
+  lmdf[[i]] <- merge(
+    # convert to a data.frame
+    fortify(grid250, region="id"),
+    grid250@data, 
+    by="id"
+  )
+}
+
+lmplot<- function(x){
+  ggplot(data=x, aes(x=long,y=lat,group=group, fill=cut(mi,breaks =c(-Inf, -.18, -0.04, 0.04, .18, Inf))))+
+    coord_equal()+
+    geom_polygon()+
+    xlab("longitude")+
+    ylab("latitude")+
+    theme_bw() +
+    scale_fill_manual(values = c("#2b83ba", "#abdda4", "#ffffbf","#fdae61", "#d7191c"))+
+    theme(axis.title=element_blank(),
+          axis.text=element_blank(),
+          axis.ticks=element_blank(),
+          panel.border = element_blank(), panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          plot.title = element_text(hjust = 0.5))+
+    labs(fill= "Local Moran's I")+
+    ggtitle(method[i])+ 
+    annotate("text", x=322548 ,y=4727120, label= paste("Global Moran's I: ", round(mI[i],3)))
+}
+
+lmplots<- list()
+for(i in 1:13){
+  lmplots[[i]]<- lmplot(as.data.frame(lmdf[i]))
+}
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Ripley's L
+p<- list()
+l<- list()
+
+for (i in 1:length(P)){
+  p[[i]] <- ppp(P[[i]]$long, P[[i]]$lat, c(min(P[[i]]$long), max(P[[i]]$long)), c(min(P[[i]]$lat), max(P[[i]]$lat)))
+  t<- Lest(p[[i]],correction="Ripley")
+  l[[i]]<- data.frame("r"=t$r, "l"=t$iso-t$theo,"method"= method[i],"p"="b","num"=i)
+  l[[i]]$l<- l[[i]]$l- l[[1]]$l
+}
+
+rl1 <- ggplot() + 
+  geom_line(data= l[[1]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[2]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[3]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[4]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[5]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[6]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[7]], aes(x = r, y=l,color=method))+
+  ggtitle("Ripley's L")+
+  xlab("r (Meters)")+
+  ylab("L Function Difference From CSR")+
+  labs(color= "Perturbation")+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), 
+        axis.line=element_line(colour = "black"))
+
+
+rl2 <- ggplot() + 
+  geom_line(data= l[[1]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[8]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[9]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[10]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[11]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[12]], aes(x = r, y=l,color=method))+
+  geom_line(data= l[[13]], aes(x = r, y=l,color=method))+
+  ggtitle("Ripley's L")+
+  xlab("r (Meters)")+
+  ylab("L Function Difference From CSR")+
+  labs(color= "Perturbation")+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), 
+        axis.line=element_line(colour = "black"))
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Distance to K nearest neighbor
+n1<-c()
+n5<-c()
+n10<- c()
+n20<- c()
+
+for(i in 1:length(P)){
+  ppp<- ppp(P[[i]]$long, P[[i]]$lat, c(min(P[[i]]$long), max(P[[i]]$long)), c(min(P[[i]]$lat), max(P[[i]]$lat)))
+  n1[i]<-mean(nndist(ppp, k=1)) 
+  n5[i]<-mean(nndist(ppp, k=5))
+  n10[i]<-mean(nndist(ppp, k=10))
+  n20[i]<-mean(nndist(ppp, k=20))
+}
+
+n1p<- n1/n1[1]
+n5p<- n5/n5[1]
+n10p<- n10/n10[1]
+n20p<- n20/n20[1]
+
+
+knn<- data.frame(method,round(n1,2),round(n1p,2),round(n5,2),round(n5p,2),round(n10,2),round(n10p,2),round(n20,2),round(n20p,2))
+
+ktable<- kable(knn, col.names=c("Perturbation Method", "K=1","Proportion of Original K=1","K=5","Proportion of Original K=5", "K=10","Proportion of Original K=10", "K=20","Proportion of Original K=20"), caption= "Distance to K-Nearest Nieghbors") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##K-anonymity with different amounts of the data
+
+kanonfun<- function(P, prop){
+  kd<-list()
+  x<- round(nrow(data)*prop)
+  s<- sort(sample(nrow(P0), x, replace = FALSE))
+  df<- list()
+  
+  for (i in 1:13){
+    df[[i]]<-  P[[i]][s,]
+  }
+  
+  for(z in 1:13){
+    p<- cbind(df[[1]][[1]], df[[1]][[2]])
+    p2<- cbind(df[[z]][[1]], df[[z]][[2]])
+    #Distance the original point was moved
+    d<- cdist(p,p2, metric="euclidean")
+    d<- as.matrix(d)
+    #Distance between the new point and all other new points
+    d2<- cdist(p2,p2, metric= "euclidean")
+    d2<- as.matrix(d2)
+    #how far did each point move
+    t<-c()
+    for(i in 1:ncol(d)){
+      t[i]<- d[c(i),c(i)]
+    }
+    
+    #get all the points that are closer than the distance the points moved
+    o <-c()
+    for (m in 1:ncol(d2)){
+      o[m]<-(sum(d2[,m]<= t[m], na.rm=TRUE))
+    }
+    kd[z]<- list(o)
+}
+
+k<- data.frame(density= 1:13,under10=1:13, under5=1:13, minkanon=1:13, meankanon=1:13)
+
+  for (i in 1:length(kd)){
+    k$density<- round(length(df[[1]][[1]])/19.17,2)
+    k$under10[i] <- round(sum(unlist(kd[[i]])<10)/(length(unlist(kd[[i]]))),4)
+    k$under5[i] <-  round(sum(unlist(kd[[i]])< 5)/(length(unlist(kd[[i]]))),4)
+    k$minkanon[i] <-  round(min(unlist(kd[[i]])),4)
+    k$meankanon[i] <-  round(mean(unlist(kd[[i]])),4)
+  }
+output<- k
+}
+
+kfull<- kanonfun(P, 1)
+k75<- kanonfun(P, .75)
+k50<- kanonfun(P, .5)
+k25<- kanonfun(P, .25)
+k10<- kanonfun(P,.1)
+
+
+kanon<- data.frame(method, kfull$density, kfull$under10, kfull$under5, kfull$minkanon, kfull$meankanon, k75$density, k75$under10, k75$under5, k75$minkanon, k75$meankanon,k50$density, k50$under10, k50$under5, k50$minkanon, k50$meankanon,k25$density, k25$under10, k25$under5, k25$minkanon, k25$meankanon,k10$density, k10$under10, k10$under5, k10$minkanon, k10$meankanon)
+
+kanontable<- kable(kanon, col.names=c("Perturbation Method", "Points per km2","K<10", "K<5", "Min K", "Mean K","Points per km2","K<10", "K<5", "Min K", "Mean K","Points per km2","K<10", "K<5", "Min K", "Mean K","Points per km2","K<10", "K<5", "Min K", "Mean K","Points per km2","K<10", "K<5", "Min K", "Mean K"), caption= "K-Anonymity") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))%>%
+  add_header_above(c(" " = 1, "100% of Data" = 5, "75% of Data" = 5, "50% of Data" = 5, "25% of Data"=5, "10% of Data"=5))
+
+```
+
+
+```{r, message=FALSE,echo= FALSE,warning=FALSE}
+#tables
+spcenter
+gm
+ktable
+kanontable
+```
+
+```{r, message=FALSE,echo= FALSE,warning=FALSE,error=FALSE}
+#plots
+
+ggarrange(plots[[1]])
+ggarrange(plots[[2]], plots[[3]],plots[[4]],plots[[5]],plots[[6]],plots[[7]],plots[[8]],plots[[9]],plots[[10]],
+                      plots[[11]], plots[[12]],plots[[13]], ncol = 2)
+
+ggarrange(lmplots[[1]])                                                
+ggarrange(lmplots[[2]]+theme(legend.position = "none"), 
+          lmplots[[3]]+theme(legend.position = "none"),
+          lmplots[[4]]+theme(legend.position = "none"),
+          lmplots[[5]]+theme(legend.position = "none"),
+          lmplots[[6]]+theme(legend.position = "none"),
+          lmplots[[7]]+theme(legend.position = "none"),
+          lmplots[[8]]+theme(legend.position = "none"),
+          lmplots[[9]]+theme(legend.position = "none"),
+          lmplots[[10]]+theme(legend.position = "none"),
+          lmplots[[11]]+theme(legend.position = "none"), 
+          lmplots[[12]]+theme(legend.position = "none"),
+          lmplots[[13]]+theme(legend.position = "none"), 
+          ncol=2)
+
+ggarrange(rl1, rl2, nrow=2, ncol=1)
+
+
+```
+
