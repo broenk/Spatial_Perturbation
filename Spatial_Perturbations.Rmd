@@ -5,18 +5,18 @@
 set.seed(403489)
 
 ##Load the packages you need 
-require(readr)
-require(spatstat)
-require(maptools)
-require(spdep)
-require(kableExtra)
-require(raster)
-require(ggplot2)
-require(rdist)
-require(ggpubr)
-require(sf)
-require(GISTools)
-require(dplyr)
+library(readr)
+library(spatstat)
+library(maptools)
+library(spdep)
+library(kableExtra)
+library(raster)
+library(ggplot2)
+library(rdist)
+library(ggpubr)
+library(sf)
+library(GISTools)
+library(dplyr)
 ###Step 1: Perturb the data using various methods of geomasking
 
 ##Import the data 
