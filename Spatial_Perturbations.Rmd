@@ -244,7 +244,7 @@ P0<- data.frame("long"= data[,2], "lat"=data[,1])
 P<- list(P0,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12)
 
 river<- st_read("data/HYDRO100K_ARC.shp")
-river<- river %>% subset(NAME=="Merrimack River")
+river<- river %>% filter(NAME=="Merrimack River")
 river<- st_transform(structure(river, proj4string = "+proj=utm +zone=19 ellps=WGS84"),"+proj=utm +zone=19 ellps=WGS84")
 river<- st_intersection(law,river)
 
