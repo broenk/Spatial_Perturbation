@@ -1,3 +1,8 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
 
 
 ```{r setup, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
@@ -173,7 +178,7 @@ P8<- data.frame("long"= P8[,1], "lat"=P8[,2])
 ##Load shapefile of Lawrence, MA
 ##Create a grid over the data and move each point to the middle of the cell it is in
 
-law<- st_read("tl_2017_25_cousub.shp")
+law<- st_read("data/tl_2017_25_cousub.shp")
 law<- law[law$NAME=="Lawrence",]
 law<- st_transform(structure(law, proj4string = "+proj=utm +zone=19 ellps=WGS84"), "+proj=utm +zone=19 ellps=WGS84")
 
@@ -236,7 +241,7 @@ P12<- data.frame("long"= p.data$P12long, "lat"=p.data$P12lat)
 P0<- data.frame("long"= data[,2], "lat"=data[,1]) 
 P<- list(P0,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12)
 
-river<- st_read("HYDRO100K_ARC.shp")
+river<- st_read("data/HYDRO100K_ARC.shp")
 river<- river %>% subset(NAME=="Merrimack River")
 river<- st_transform(structure(river, proj4string = "+proj=utm +zone=19 ellps=WGS84"),"+proj=utm +zone=19 ellps=WGS84")
 river<- st_intersection(law,river)
