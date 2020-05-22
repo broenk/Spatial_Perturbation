@@ -40,7 +40,7 @@ jitter <-
   function(coords, max, min){
     n <- nrow(coords)
     angle <- runif(n, min=0, max=2*pi)
-    d <- sqrt(runif(n, min = min^2, max = max^2))
+    d <- runif(n, min = min, max = max) # sqrt of uniform won't be uniform, so this pushes values more to the extremes, I don't think you need to square the end points and sqrt the output if you want a uniform RV for distance
     coords <- coords + cbind(d * cos(angle), d * sin(angle))
     return(coords)
   }
