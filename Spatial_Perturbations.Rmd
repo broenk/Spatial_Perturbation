@@ -208,10 +208,11 @@ grid250<- (st_make_grid(R100, cellsize = 250, what = "polygons")) # ROB NOTE: sh
 st_crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
 
 l<- st_intersects(points_df, grid250)
-for(i in 1:4050){
+grid_250_centroids <- grid250 %>% st_centroid() %>% st_coordinates()
+for(i in 1:nrow(points_df)){
 t<- l[[i]]
-p.data$P10long[i]<-st_coordinates(st_centroid(grid250[t]))[1]
-p.data$P10lat[i]<- st_coordinates(st_centroid(grid250[t]))[2]
+p.data$P10long[i]<-grid_250_centroids[t,1]
+p.data$P10lat[i]<- grid_250_centroids[t,2]
 }
 
 P10<- data.frame("long"= p.data$P10long, "lat"=p.data$P10lat)
