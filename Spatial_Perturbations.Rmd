@@ -180,7 +180,7 @@ P8<- data.frame("long"= P8[,1], "lat"=P8[,2])
 
 law<- st_read("data/tl_2017_25_cousub.shp")
 law<- law[law$NAME=="Lawrence",]
-law<- st_transform(structure(law, proj4string = "+proj=utm +zone=19 ellps=WGS84"), "+proj=utm +zone=19 ellps=WGS84")
+law<- st_transform(law, st_crs("+proj=utm +zone=19 ellps=WGS84"))
 
 #Put points into sf form
 sf<- st_as_sf(data, coords= c("long","lat"))
