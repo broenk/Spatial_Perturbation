@@ -183,8 +183,8 @@ law<- law[law$NAME=="Lawrence",]
 law<- st_transform(law, st_crs("+proj=utm +zone=19 ellps=WGS84"))
 
 #Put points into sf form
-sf<- st_as_sf(data, coords= c("long","lat"))
-st_crs(sf)<- "+proj=utm +zone=19 ellps=WGS84"
+sf_df<- st_as_sf(data, coords= c("long","lat"),
+              crs = st_crs("+proj=utm +zone=19 ellps=WGS84"))
 
 #Make a grid with cells 100x100 meters
 R100 <- st_as_sf(rasterToPolygons(raster(xmn=min(data$long), ymn=min(data$lat), xmx=max(data$long), ymx=max(data$lat), res=100)))
