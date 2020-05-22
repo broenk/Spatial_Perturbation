@@ -204,7 +204,7 @@ P9<- data.frame("long"= p.data$P9long, "lat"=p.data$P9lat)
 
 #Make a grid with cells 250x250 meters
 R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(data$long), ymn=min(data$lat), xmx=max(data$long), ymx=max(data$lat), res=250)))
-grid250<- (st_make_grid(R100, cellsize = 250, what = "polygons"))
+grid250<- (st_make_grid(R100, cellsize = 250, what = "polygons")) # ROB NOTE: should this be R250? Can it just be law?
 st_crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
 
 l<- st_intersects(points_df, grid250)
