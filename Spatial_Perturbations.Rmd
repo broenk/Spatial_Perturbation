@@ -20,7 +20,7 @@ require(dplyr)
 ###Step 1: Perturb the data using various methods of geomasking
 
 ##Import the data 
-data<- read.csv("Lawrence.csv")
+data<- read.csv("data/Lawrence.csv")
 
 #Subset to data with geocdoded locations
 data<- data %>% subset(lat>0 & long>0)
@@ -36,7 +36,7 @@ p.data<- data.frame("Orig.Long"= data$long,"Orig.Lat"=data$lat)
 
 ##Perturbation 1: Random Jitter within 50 Meters
 #Random Jitter function
-"jitter" <-
+jitter <-
   function(coords, max, min){
     n <- nrow(coords)
     angle <- runif(n, min=0, max=2*pi)
