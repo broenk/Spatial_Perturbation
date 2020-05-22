@@ -23,7 +23,7 @@ library(dplyr)
 data<- read.csv("data/Lawrence.csv")
 
 #Subset to data with geocdoded locations
-data<- data %>% subset(lat>0 & long>0)
+data<- data %>% filter(!is.na(lat), !is.na(long), lat>0,long>0)
 
 #restrict data to useful variables
 data<- data[c("lat","long")]
