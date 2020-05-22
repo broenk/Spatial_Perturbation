@@ -188,14 +188,15 @@ points_df<- st_as_sf(data, coords= c("long","lat"),
 
 #Make a grid with cells 100x100 meters
 R100 <- st_as_sf(rasterToPolygons(raster(xmn=min(data$long), ymn=min(data$lat), xmx=max(data$long), ymx=max(data$lat), res=100)))
-grid100<- (st_make_grid(R100, cellsize = 100, what = "polygons"))
+grid100<- (st_make_grid(R100, cellsize = 100, what = "polygons")) # ROB NOTE: why use R100?
 st_crs(grid100)<- "+proj=utm +zone=19 ellps=WGS84"
 
+grid_centroids <- grid100 %>% st_centroid() %>% st_coordinates()
 l<- st_intersects(points_df, grid100)
-for(i in 1:4050){
-t<- l[[i]]
-p.data$P9long[i]<-st_coordinates(st_centroid(grid100[t]))[1]
-p.data$P9lat[i]<- st_coordinates(st_centroid(grid100[t]))[2]
+for(i in 1:nrow(points_df)){
+  t<- l[[i]]
+  p.data$P9long[i]<-grid_centroids[t,1]
+  p.data$P9lat[i]<- grid_centroids[t,2]
 }
 P9<- data.frame("long"= p.data$P9long, "lat"=p.data$P9lat)
 
