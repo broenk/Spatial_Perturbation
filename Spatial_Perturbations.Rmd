@@ -365,8 +365,9 @@ crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
     by="id"
   )
 }
+# ROB NOTE: The 11th data frame results in sum(grid250$counts) = 0 
 
-lmplot<- function(x){
+lmplot<- function(x,method,mI){
   ggplot(data=x, aes(x=long,y=lat,group=group, fill=cut(mi,breaks =c(-Inf, -.18, -0.04, 0.04, .18, Inf))))+
     coord_equal()+
     geom_polygon()+
@@ -381,13 +382,13 @@ lmplot<- function(x){
           panel.grid.minor = element_blank(),
           plot.title = element_text(hjust = 0.5))+
     labs(fill= "Local Moran's I")+
-    ggtitle(method[i])+ 
-    annotate("text", x=322548 ,y=4727120, label= paste("Global Moran's I: ", round(mI[i],3)))
+    ggtitle(method)+ 
+    annotate("text", x=322548 ,y=4727120, label= paste("Global Moran's I: ", round(mI,3)))
 }
 
 lmplots<- list()
 for(i in 1:13){
-  lmplots[[i]]<- lmplot(as.data.frame(lmdf[i]))
+  lmplots[[i]]<- lmplot(as.data.frame(lmdf[i]), method[i], mI[i])
 }
 ```
 
@@ -518,8 +519,10 @@ k<- data.frame(density= 1:13,under10=1:13, under5=1:13, minkanon=1:13, meankanon
 output<- k
 }
 
+## ROB NOTE: Would it make sense to generate multiple random samples 
+## so you get a sense of the distribution of outcomes?
 kfull<- kanonfun(P, 1)
-k75<- kanonfun(P, .75)
+k75<- kanonfun(P, .75) 
 k50<- kanonfun(P, .5)
 k25<- kanonfun(P, .25)
 k10<- kanonfun(P,.1)
