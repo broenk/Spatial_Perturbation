@@ -251,18 +251,19 @@ river<- st_intersection(law,river)
 method<- c("Original Data", "Random Perturbation 50m","Random Perturbation 250m","Random Weighted Perturbation 5NN","Random Weighted Perturbation 50NN", "Donut between 5-50 Meters","Donut between 50-250 Meters","Affine Shear", "Voronoi Masked","Grid Center w/100M cells","Grid Center w/250M cells","Grid Line w/100M cells","Grid Line w/250M cells")
 
 
-cplot<- function(x){
-  ggplot() +
-  geom_sf(data=law, fill=NA)+
-  geom_sf(data=river, color= "blue")+
+cplot<- function(x, boundary, feature, method){
+  g <- ggplot() +
+  geom_sf(data=boundary, fill=NA)+
+  geom_sf(data=feature, color= "blue")+
   geom_point(data=x, aes(x=long, y=lat), color= "red", size=.1)+
   theme_void()+
-  ggtitle(method[i])
+  ggtitle(method)
+  return(g)
 }
 
 plots<- list()
 for(i in 1:13){
-  plots[[i]]<- cplot(P[[i]])
+  plots[[i]]<- cplot(P[[i]],law,river,method[i])
 }
   
 ```
@@ -281,10 +282,10 @@ for (i in 1:length(P)){
  colnames(agg.P[[i]])<- c("long", "lat", "deaths")
 }
 
-R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1]), ymn=min(P[[1]][2]), xmx=max(P[[1]][1]), ymx=max(P[[1]][2]), res=250)))
+R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1]), ymn=min(P[[1]][2]), xmx=max(P[[1]][1]), ymx=max(P[[1]][2]), res=250))) ## ROB NOTE: Do you lose points in other P[[i]]? Because jittered points won't always lie in the bounds of P[[1]]'s coords
 grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
 grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
-crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
+crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84" 
 
 
 for(i in 1:length(P)){
