@@ -1,3 +1,8 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
 
 
 ```{r setup, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
@@ -5,25 +10,25 @@
 set.seed(403489)
 
 ##Load the packages you need 
-require(readr)
-require(spatstat)
-require(maptools)
-require(spdep)
-require(kableExtra)
-require(raster)
-require(ggplot2)
-require(rdist)
-require(ggpubr)
-require(sf)
-require(GISTools)
-require(dplyr)
+library(readr)
+library(spatstat)
+library(maptools)
+library(spdep)
+library(kableExtra)
+library(raster)
+library(ggplot2)
+library(rdist)
+library(ggpubr)
+library(sf)
+library(GISTools)
+library(dplyr)
 ###Step 1: Perturb the data using various methods of geomasking
 
 ##Import the data 
-data<- read.csv("Lawrence.csv")
+data<- read.csv("data/Lawrence.csv")
 
 #Subset to data with geocdoded locations
-data<- data %>% subset(lat>0 & long>0)
+data<- data %>% filter(!is.na(lat), !is.na(long), lat>0,long>0)
 
 #restrict data to useful variables
 data<- data[c("lat","long")]
@@ -36,11 +41,11 @@ p.data<- data.frame("Orig.Long"= data$long,"Orig.Lat"=data$lat)
 
 ##Perturbation 1: Random Jitter within 50 Meters
 #Random Jitter function
-"jitter" <-
+jitter <-
   function(coords, max, min){
     n <- nrow(coords)
     angle <- runif(n, min=0, max=2*pi)
-    d <- sqrt(runif(n, min = min^2, max = max^2))
+    d <- runif(n, min = min, max = max) # sqrt of uniform won't be uniform, so this pushes values more to the extremes, I don't think you need to square the end points and sqrt the output if you want a uniform RV for distance
     coords <- coords + cbind(d * cos(angle), d * sin(angle))
     return(coords)
   }
@@ -173,24 +178,25 @@ P8<- data.frame("long"= P8[,1], "lat"=P8[,2])
 ##Load shapefile of Lawrence, MA
 ##Create a grid over the data and move each point to the middle of the cell it is in
 
-law<- st_read("tl_2017_25_cousub.shp")
+law<- st_read("data/tl_2017_25_cousub.shp")
 law<- law[law$NAME=="Lawrence",]
-law<- st_transform(structure(law, proj4string = "+proj=utm +zone=19 ellps=WGS84"), "+proj=utm +zone=19 ellps=WGS84")
+law<- st_transform(law, st_crs("+proj=utm +zone=19 ellps=WGS84"))
 
 #Put points into sf form
-sf<- st_as_sf(data, coords= c("long","lat"))
-st_crs(sf)<- "+proj=utm +zone=19 ellps=WGS84"
+points_df<- st_as_sf(data, coords= c("long","lat"),
+              crs = st_crs("+proj=utm +zone=19 ellps=WGS84"))
 
 #Make a grid with cells 100x100 meters
 R100 <- st_as_sf(rasterToPolygons(raster(xmn=min(data$long), ymn=min(data$lat), xmx=max(data$long), ymx=max(data$lat), res=100)))
-grid100<- (st_make_grid(R100, cellsize = 100, what = "polygons"))
+grid100<- (st_make_grid(R100, cellsize = 100, what = "polygons")) # ROB NOTE: why use R100?
 st_crs(grid100)<- "+proj=utm +zone=19 ellps=WGS84"
 
-l<- st_intersects(sf, grid100)
-for(i in 1:4050){
-t<- l[[i]]
-p.data$P9long[i]<-st_coordinates(st_centroid(grid100[t]))[1]
-p.data$P9lat[i]<- st_coordinates(st_centroid(grid100[t]))[2]
+grid_centroids <- grid100 %>% st_centroid() %>% st_coordinates()
+l<- st_intersects(points_df, grid100)
+for(i in 1:nrow(points_df)){
+  t<- l[[i]]
+  p.data$P9long[i]<-grid_centroids[t,1]
+  p.data$P9lat[i]<- grid_centroids[t,2]
 }
 P9<- data.frame("long"= p.data$P9long, "lat"=p.data$P9lat)
 
@@ -198,14 +204,15 @@ P9<- data.frame("long"= p.data$P9long, "lat"=p.data$P9lat)
 
 #Make a grid with cells 250x250 meters
 R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(data$long), ymn=min(data$lat), xmx=max(data$long), ymx=max(data$lat), res=250)))
-grid250<- (st_make_grid(R100, cellsize = 250, what = "polygons"))
+grid250<- (st_make_grid(R100, cellsize = 250, what = "polygons")) # ROB NOTE: should this be R250? Can it just be law?
 st_crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
 
-l<- st_intersects(sf, grid250)
-for(i in 1:4050){
+l<- st_intersects(points_df, grid250)
+grid_250_centroids <- grid250 %>% st_centroid() %>% st_coordinates()
+for(i in 1:nrow(points_df)){
 t<- l[[i]]
-p.data$P10long[i]<-st_coordinates(st_centroid(grid250[t]))[1]
-p.data$P10lat[i]<- st_coordinates(st_centroid(grid250[t]))[2]
+p.data$P10long[i]<-grid_250_centroids[t,1]
+p.data$P10lat[i]<- grid_250_centroids[t,2]
 }
 
 P10<- data.frame("long"= p.data$P10long, "lat"=p.data$P10lat)
@@ -236,61 +243,55 @@ P12<- data.frame("long"= p.data$P12long, "lat"=p.data$P12lat)
 P0<- data.frame("long"= data[,2], "lat"=data[,1]) 
 P<- list(P0,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12)
 
-river<- st_read("HYDRO100K_ARC.shp")
-river<- river %>% subset(NAME=="Merrimack River")
-river<- st_transform(structure(river, proj4string = "+proj=utm +zone=19 ellps=WGS84"),"+proj=utm +zone=19 ellps=WGS84")
+river<- st_read("data/HYDRO100K_ARC.shp")
+river<- river %>% filter(NAME=="Merrimack River")
+river<- st_transform(river, st_crs("+proj=utm +zone=19 ellps=WGS84"))
 river<- st_intersection(law,river)
 
 method<- c("Original Data", "Random Perturbation 50m","Random Perturbation 250m","Random Weighted Perturbation 5NN","Random Weighted Perturbation 50NN", "Donut between 5-50 Meters","Donut between 50-250 Meters","Affine Shear", "Voronoi Masked","Grid Center w/100M cells","Grid Center w/250M cells","Grid Line w/100M cells","Grid Line w/250M cells")
 
 
-cplot<- function(x){
-  ggplot() +
-  geom_sf(data=law, fill=NA)+
-  geom_sf(data=river, color= "blue")+
+cplot<- function(x, boundary, feature, method){
+  g <- ggplot() +
+  geom_sf(data=boundary, fill=NA)+
+  geom_sf(data=feature, color= "blue")+
   geom_point(data=x, aes(x=long, y=lat), color= "red", size=.1)+
+  geom_point(data=x, aes(x=mean(long), y=mean(lat)), color="black", shape=8)+
   theme_void()+
-  ggtitle(method[i])
+  ggtitle(method)
+  return(g)
 }
 
 plots<- list()
 for(i in 1:13){
-  plots[[i]]<- cplot(P[[i]])
+  plots[[i]]<- cplot(P[[i]],law,river,method[i])
 }
   
 ```
 
 ```{r, message=FALSE,echo= FALSE,warning=FALSE,error=FALSE}
 ##Analysis 1: Global Moran's I
-#aggregate data
 mI<- c()
 mvar<- c()
 mprop<- c()
-
-#aggregate data
-agg.P<- list()
-for (i in 1:length(P)){
- agg.P[[i]]<- aggregate(P[[i]][1], by=list(P[[i]][,1], P[[i]][,2]), FUN=length) 
- colnames(agg.P[[i]])<- c("long", "lat", "deaths")
-}
-
-R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1]), ymn=min(P[[1]][2]), xmx=max(P[[1]][1]), ymx=max(P[[1]][2]), res=250)))
-grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
-grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
-crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
-
-
+R200<-list()
+grid200<-list()
+p<-list()
+lw<-list(list())
+m<-list()
 for(i in 1:length(P)){
-  
-  p<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
-  grid250$counts<- poly.counts(p, grid250)
-
-  lw<- nb2listw(poly2nb(grid250), zero.policy = TRUE)
-  m<-moran.test(grid250$counts, lw, zero.policy = TRUE)
-  mI[i]<- round(m$estimate[1],2)
-  mvar[i]<- round(m$estimate[3],5)
+  R200[[i]] <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[i]][1]), ymn=min(P[[i]][2]), xmx=max(P[[i]][1]), ymx=max(P[[i]][2]), res=200)))
+  grid200[[i]]<- (st_make_grid(R200[[i]], cellsize = 200, what = "polygons"))
+  grid200[[i]]<- as(st_cast(grid200[[i]], "MULTIPOLYGON"), "Spatial")
+  p[[i]]<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
+  grid200[[i]]$counts<-poly.counts(p[[i]], grid200[[i]])
+  lw[[i]]<- nb2listw(poly2nb(grid200[[i]]), zero.policy = TRUE)
+  m[[i]]<-moran.test(grid200[[i]]$counts, lw[[i]], zero.policy = TRUE)
+  mI[i]<- round(m[[i]]$estimate[1],2)
+  mvar[i]<- round(m[[i]]$estimate[3],5)
   mprop[i]<- round(mI[i]/mI[1],2)
-}
+  }
+  
 gMoran<- data.frame(method, mI, mprop, mvar)
 
 ##Make a table of results
@@ -333,21 +334,17 @@ R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1])-500, ymn=min(P[[1]][
 grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
 grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
 crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
-
-
 for (i in 1:13){
 R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[i]][1]), ymn=min(P[[i]][2]), xmx=max(P[[i]][1]), ymx=max(P[[i]][2]), res=250)))
 grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
 grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
 crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
   
-
   p<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
   grid250$counts<- poly.counts(p, grid250)
   nb<- poly2nb(grid250)
   lw<- nb2listw(nb)
   li<-(localmoran(grid250$counts, lw))
-
   grid250@data$id <- rownames(grid250@data)
   grid250@data$mi <- li[,1]
   lmdf[[i]] <- merge(
@@ -357,8 +354,7 @@ crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
     by="id"
   )
 }
-
-lmplot<- function(x){
+lmplot<- function(x,method,mI){
   ggplot(data=x, aes(x=long,y=lat,group=group, fill=cut(mi,breaks =c(-Inf, -.18, -0.04, 0.04, .18, Inf))))+
     coord_equal()+
     geom_polygon()+
@@ -373,17 +369,14 @@ lmplot<- function(x){
           panel.grid.minor = element_blank(),
           plot.title = element_text(hjust = 0.5))+
     labs(fill= "Local Moran's I")+
-    ggtitle(method[i])+ 
-    annotate("text", x=322548 ,y=4727120, label= paste("Global Moran's I: ", round(mI[i],3)))
+    ggtitle(method)+ 
+    annotate("text", x=322548 ,y=4727120, label= paste("Global Moran's I: ", round(mI,3)))
 }
-
 lmplots<- list()
 for(i in 1:13){
-  lmplots[[i]]<- lmplot(as.data.frame(lmdf[i]))
+  lmplots[[i]]<- lmplot(as.data.frame(lmdf[i]), method[i], mI[i])
 }
 ```
-
-
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 ##Ripley's L
@@ -510,8 +503,10 @@ k<- data.frame(density= 1:13,under10=1:13, under5=1:13, minkanon=1:13, meankanon
 output<- k
 }
 
+## ROB NOTE: Would it make sense to generate multiple random samples 
+## so you get a sense of the distribution of outcomes?
 kfull<- kanonfun(P, 1)
-k75<- kanonfun(P, .75)
+k75<- kanonfun(P, .75) 
 k50<- kanonfun(P, .5)
 k25<- kanonfun(P, .25)
 k10<- kanonfun(P,.1)
