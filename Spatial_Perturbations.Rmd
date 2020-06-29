@@ -256,6 +256,7 @@ cplot<- function(x, boundary, feature, method){
   geom_sf(data=boundary, fill=NA)+
   geom_sf(data=feature, color= "blue")+
   geom_point(data=x, aes(x=long, y=lat), color= "red", size=.1)+
+  geom_point(data=x, aes(x=mean(long), y=mean(lat)), color="black", shape=8)+
   theme_void()+
   ggtitle(method)
   return(g)
@@ -270,35 +271,27 @@ for(i in 1:13){
 
 ```{r, message=FALSE,echo= FALSE,warning=FALSE,error=FALSE}
 ##Analysis 1: Global Moran's I
-#aggregate data
 mI<- c()
 mvar<- c()
 mprop<- c()
-
-#aggregate data
-agg.P<- list()
-for (i in 1:length(P)){
- agg.P[[i]]<- aggregate(P[[i]][1], by=list(P[[i]][,1], P[[i]][,2]), FUN=length) 
- colnames(agg.P[[i]])<- c("long", "lat", "deaths")
-}
-
-R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1]), ymn=min(P[[1]][2]), xmx=max(P[[1]][1]), ymx=max(P[[1]][2]), res=250))) ## ROB NOTE: Do you lose points in other P[[i]]? Because jittered points won't always lie in the bounds of P[[1]]'s coords
-grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
-grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
-crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84" 
-
-
+R200<-list()
+grid200<-list()
+p<-list()
+lw<-list(list())
+m<-list()
 for(i in 1:length(P)){
-  
-  p<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
-  grid250$counts<- poly.counts(p, grid250)
-
-  lw<- nb2listw(poly2nb(grid250), zero.policy = TRUE)
-  m<-moran.test(grid250$counts, lw, zero.policy = TRUE)
-  mI[i]<- round(m$estimate[1],2)
-  mvar[i]<- round(m$estimate[3],5)
+  R200[[i]] <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[i]][1]), ymn=min(P[[i]][2]), xmx=max(P[[i]][1]), ymx=max(P[[i]][2]), res=200)))
+  grid200[[i]]<- (st_make_grid(R200[[i]], cellsize = 200, what = "polygons"))
+  grid200[[i]]<- as(st_cast(grid200[[i]], "MULTIPOLYGON"), "Spatial")
+  p[[i]]<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
+  grid200[[i]]$counts<-poly.counts(p[[i]], grid200[[i]])
+  lw[[i]]<- nb2listw(poly2nb(grid200[[i]]), zero.policy = TRUE)
+  m[[i]]<-moran.test(grid200[[i]]$counts, lw[[i]], zero.policy = TRUE)
+  mI[i]<- round(m[[i]]$estimate[1],2)
+  mvar[i]<- round(m[[i]]$estimate[3],5)
   mprop[i]<- round(mI[i]/mI[1],2)
-}
+  }
+  
 gMoran<- data.frame(method, mI, mprop, mvar)
 
 ##Make a table of results
@@ -341,21 +334,17 @@ R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1])-500, ymn=min(P[[1]][
 grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
 grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
 crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
-
-
 for (i in 1:13){
 R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[i]][1]), ymn=min(P[[i]][2]), xmx=max(P[[i]][1]), ymx=max(P[[i]][2]), res=250)))
 grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
 grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
 crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
   
-
   p<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
   grid250$counts<- poly.counts(p, grid250)
   nb<- poly2nb(grid250)
   lw<- nb2listw(nb)
   li<-(localmoran(grid250$counts, lw))
-
   grid250@data$id <- rownames(grid250@data)
   grid250@data$mi <- li[,1]
   lmdf[[i]] <- merge(
@@ -365,8 +354,6 @@ crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
     by="id"
   )
 }
-# ROB NOTE: The 11th data frame results in sum(grid250$counts) = 0 
-
 lmplot<- function(x,method,mI){
   ggplot(data=x, aes(x=long,y=lat,group=group, fill=cut(mi,breaks =c(-Inf, -.18, -0.04, 0.04, .18, Inf))))+
     coord_equal()+
@@ -385,14 +372,11 @@ lmplot<- function(x,method,mI){
     ggtitle(method)+ 
     annotate("text", x=322548 ,y=4727120, label= paste("Global Moran's I: ", round(mI,3)))
 }
-
 lmplots<- list()
 for(i in 1:13){
   lmplots[[i]]<- lmplot(as.data.frame(lmdf[i]), method[i], mI[i])
 }
 ```
-
-
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 ##Ripley's L
