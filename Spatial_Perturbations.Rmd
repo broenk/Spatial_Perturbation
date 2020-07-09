@@ -271,6 +271,8 @@ for(i in 1:13){
 
 ```{r, message=FALSE,echo= FALSE,warning=FALSE,error=FALSE}
 ##Analysis 1: Global Moran's I
+
+#Initiate variables
 mI<- c()
 mvar<- c()
 mprop<- c()
@@ -279,25 +281,34 @@ grid200<-list()
 p<-list()
 lw<-list(list())
 m<-list()
+
 for(i in 1:length(P)){
-  R200[[i]] <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[i]][1]), ymn=min(P[[i]][2]), xmx=max(P[[i]][1]), ymx=max(P[[i]][2]), res=200)))
+  #Make a raster for each perturbation
+  R200[[i]] <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[i]][1])-100, ymn=min(P[[i]][2])-100, xmx=max(P[[i]][1])+100, ymx=max(P[[i]][2])+100, res=201)))
+  #Make into sf grid
   grid200[[i]]<- (st_make_grid(R200[[i]], cellsize = 200, what = "polygons"))
+  #transform to sp
   grid200[[i]]<- as(st_cast(grid200[[i]], "MULTIPOLYGON"), "Spatial")
+  #set crs
+  crs(grid200[[i]])<- "+proj=utm +zone=19 ellps=WGS84"
+  #put points into sp
   p[[i]]<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
+  #Get count of points per grid cell
   grid200[[i]]$counts<-poly.counts(p[[i]], grid200[[i]])
+  #make neighborhood matrix
   lw[[i]]<- nb2listw(poly2nb(grid200[[i]]), zero.policy = TRUE)
+  #global moran's
   m[[i]]<-moran.test(grid200[[i]]$counts, lw[[i]], zero.policy = TRUE)
   mI[i]<- round(m[[i]]$estimate[1],2)
   mvar[i]<- round(m[[i]]$estimate[3],5)
   mprop[i]<- round(mI[i]/mI[1],2)
-  }
-  
-gMoran<- data.frame(method, mI, mprop, mvar)
+}
 
+
+gMoran<- data.frame(method, mI, mprop, mvar)
 ##Make a table of results
 gm<- kable(gMoran, col.names=c("Perturbation Method", "Global Moran's I","Proportion of Unperturbed I", "Variance in I"), caption= "Global Moran's I") %>% 
 kable_styling(bootstrap_options = c("striped", "hover"))
-
 ```
 
 
@@ -328,32 +339,24 @@ spcenter<-kable(center, col.names=c("Perturbation Method", "Change in Median","C
 ```
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
 ##Local Moran's
 lmdf<-list()
-R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[1]][1])-500, ymn=min(P[[1]][2])-500, xmx=max(P[[1]][1])+500, ymx=max(P[[1]][2])+500, res=250)))
-grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
-grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
-crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
+
 for (i in 1:13){
-R250 <- st_as_sf(rasterToPolygons(raster(xmn=min(P[[i]][1]), ymn=min(P[[i]][2]), xmx=max(P[[i]][1]), ymx=max(P[[i]][2]), res=250)))
-grid250<- (st_make_grid(R250, cellsize = 250, what = "polygons"))
-grid250<- as(st_cast(grid250, "MULTIPOLYGON"), "Spatial")
-crs(grid250)<- "+proj=utm +zone=19 ellps=WGS84"
-  
-  p<- SpatialPoints(cbind(P[[i]][1],P[[i]][2]), proj4string = CRS("+proj=utm +zone=19 ellps=WGS84"))
-  grid250$counts<- poly.counts(p, grid250)
-  nb<- poly2nb(grid250)
-  lw<- nb2listw(nb)
-  li<-(localmoran(grid250$counts, lw))
-  grid250@data$id <- rownames(grid250@data)
-  grid250@data$mi <- li[,1]
+  #Use the grid and weights from Global Moran's
+  li<-(localmoran(grid200[[i]]$counts, lw[[i]])) 
+  #merge and fortify data
+  grid200[[i]]@data$id <- rownames(grid200[[i]]@data)
+  grid200[[i]]@data$mi <- li[,1]
   lmdf[[i]] <- merge(
     # convert to a data.frame
-    fortify(grid250, region="id"),
-    grid250@data, 
+    fortify(grid200[[i]], region="id"),
+    grid200[[i]]@data, 
     by="id"
   )
 }
+
 lmplot<- function(x,method,mI){
   ggplot(data=x, aes(x=long,y=lat,group=group, fill=cut(mi,breaks =c(-Inf, -.18, -0.04, 0.04, .18, Inf))))+
     coord_equal()+
@@ -375,6 +378,20 @@ lmplot<- function(x,method,mI){
 lmplots<- list()
 for(i in 1:13){
   lmplots[[i]]<- lmplot(as.data.frame(lmdf[i]), method[i], mI[i])
+}
+
+t<- data.frame("method"= method)
+for(i in 1:13){
+t$lowest[i]<- sum(lmdf[[i]]$mi < (-.18))/length(lmdf[[i]]$mi)
+t$lowprop[i]<- t$lowest[i]/t$lowest[1]
+t$lowmid[i]<- sum(lmdf[[i]]$mi >=  (-.18)  & lmdf[[i]]$mi < (-.04))/length(lmdf[[i]]$mi)
+t$lowmidprop[i]<- t$lowmid[i]/t$lowmid[1]
+t$mid[i]<- sum(lmdf[[i]]$mi >=  (-.04)  & lmdf[[i]]$mi < (0.4))/length(lmdf[[i]]$mi)
+t$midprop[i]<- t$mid[i]/t$mid[1]
+t$highmid[i]<- sum(lmdf[[i]]$mi >=  (.04)  & lmdf[[i]]$mi < (.18))/length(lmdf[[i]]$mi)
+t$highmidprop[i]<- t$highmid[i]/t$highmid[1]
+t$high[i]<- sum(lmdf[[i]]$mi >=  (.18))/length(lmdf[[i]]$mi)
+t$highprop[i]<- t$high[i]/t$high[1]
 }
 ```
 
